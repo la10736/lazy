@@ -7,7 +7,7 @@ use std::cell::UnsafeCell;
 use std::sync::Mutex;
 
 
-pub trait Producer<P>: Fn() -> P {
+pub trait Producer<P> {
     fn produce(&self) -> P;
 }
 
@@ -20,7 +20,7 @@ impl<P, F: Fn() -> P> Producer<P> for F {
 pub struct Lazy<'a, P>
 {
     field: UnsafeCell<Option<P>>,
-    producer: Box<Fn() -> P + 'a>
+    producer: Box<Producer<P> + 'a>
 }
 
 impl<'a, P> Lazy<'a, P>
@@ -34,7 +34,7 @@ impl<'a, P> Lazy<'a, P>
         unsafe {
             let inner = &mut *self.field.get();
             if inner.is_none() {
-                *inner = Some((*self.producer)());
+                *inner = Some(self.producer.produce());
             }
             match *inner {
                 Some(ref v) => v,
@@ -59,7 +59,7 @@ impl<'a, P> LazyParam<'a, P>
 pub struct LazyThreadSafe<'a, P>
 {
     field: Mutex<Option<P>>,
-    producer: Box<Fn() -> P + 'a + Send + Sync>
+    producer: Box<Producer<P> + 'a + Send + Sync>
 }
 
 impl<'a, P> LazyThreadSafe<'a, P>
@@ -72,7 +72,7 @@ impl<'a, P> LazyThreadSafe<'a, P>
     pub fn get(&self) -> &P {
         let mut inner = self.field.lock().unwrap();
         if inner.is_none() {
-            *inner = Some((*self.producer)());
+            *inner = Some(self.producer.produce());
         }
         unsafe {
             match *inner {
