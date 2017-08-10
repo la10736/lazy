@@ -7,9 +7,15 @@ use std::cell::UnsafeCell;
 use std::sync::Mutex;
 
 
-pub trait Producer<'a, P>: Fn() -> P + 'a {}
+pub trait Producer<P>: Fn() -> P {
+    fn produce(&self) -> P;
+}
 
-impl<'a, P, F: Fn() -> P + 'a> Producer<'a, P> for F {}
+impl<P, F: Fn() -> P> Producer<P> for F {
+    fn produce(&self) -> P {
+        self()
+    }
+}
 
 pub struct Lazy<'a, P>
 {
@@ -19,7 +25,7 @@ pub struct Lazy<'a, P>
 
 impl<'a, P> Lazy<'a, P>
 {
-    pub fn new<F: Producer<'a, P>>(f: F) -> Self
+    pub fn new<F: Producer<P> + 'a>(f: F) -> Self
     {
         Lazy { field: UnsafeCell::new(None), producer: Box::new(f) }
     }
@@ -45,7 +51,7 @@ pub struct LazyParam<'a, P>
 
 impl<'a, P> LazyParam<'a, P>
 {
-    pub fn new<F: Producer<'a, P>>(f: F) -> Self {
+    pub fn new<F: Producer<P> + 'a>(f: F) -> Self {
         LazyParam { lazy: Lazy::new(f) }
     }
 }
@@ -58,7 +64,7 @@ pub struct LazyThreadSafe<'a, P>
 
 impl<'a, P> LazyThreadSafe<'a, P>
 {
-    pub fn new<F: Producer<'a, P> + Send + Sync>(f: F) -> Self
+    pub fn new<F: Producer<P> + 'a + Send + Sync>(f: F) -> Self
     {
         LazyThreadSafe { field: Mutex::new(None), producer: Box::new(f) }
     }
@@ -84,7 +90,7 @@ pub struct LazyThreadSafeParam<'a, P>
 
 impl<'a, P> LazyThreadSafeParam<'a, P>
 {
-    pub fn new<F: Producer<'a, P> + Send + Sync>(f: F) -> Self {
+    pub fn new<F: Producer<P> + 'a + Send + Sync>(f: F) -> Self {
         LazyThreadSafeParam { lazy: LazyThreadSafe::new(f) }
     }
 }
@@ -96,7 +102,7 @@ mod tests {
     mod lazy {
         use super::*;
 
-        fn param<'a, P, F: Producer<'a, P>>(f: F) -> LazyParam<'a, P> {
+        fn param<'a, P, F: Producer<P> + 'a>(f: F) -> LazyParam<'a, P> {
             LazyParam::new(f)
         }
 
@@ -106,7 +112,7 @@ mod tests {
     mod lazy_thread_safe {
         use super::*;
 
-        fn param<'a, P, F: Producer<'a, P> + Send + Sync>(f: F) -> LazyThreadSafeParam<'a, P> {
+        fn param<'a, P, F: Producer<P> + 'a + Send + Sync>(f: F) -> LazyThreadSafeParam<'a, P> {
             LazyThreadSafeParam::new(f)
         }
 
