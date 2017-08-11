@@ -7,11 +7,15 @@ use std::cell::UnsafeCell;
 use std::sync::Mutex;
 
 
-pub trait Producer<P> {
-    fn produce(&self) -> P;
+pub trait Producer {
+    type Output;
+
+    fn produce(&self) -> Self::Output;
 }
 
-impl<P, F: Fn() -> P> Producer<P> for F {
+impl<P, F: Fn() -> P> Producer for F {
+    type Output = P;
+
     fn produce(&self) -> P {
         self()
     }
@@ -20,21 +24,22 @@ impl<P, F: Fn() -> P> Producer<P> for F {
 pub struct Lazy<'a, P>
 {
     field: UnsafeCell<Option<P>>,
-    producer: Box<Producer<P> + 'a>
+    producer: UnsafeCell<Box<Producer<Output=P> + 'a>>
 }
 
 impl<'a, P> Lazy<'a, P>
 {
-    pub fn new<F: Producer<P> + 'a>(f: F) -> Self
+    pub fn new<F: Producer<Output=P> + 'a>(f: F) -> Self
     {
-        Lazy { field: UnsafeCell::new(None), producer: Box::new(f) }
+        Lazy { field: UnsafeCell::new(None), producer: UnsafeCell::new(Box::new(f)) }
     }
 
     pub fn get(&self) -> &P {
         unsafe {
             let inner = &mut *self.field.get();
             if inner.is_none() {
-                *inner = Some(self.producer.produce());
+                let producer = &mut *self.producer.get();
+                *inner = Some(producer.produce());
             }
             match *inner {
                 Some(ref v) => v,
@@ -51,7 +56,7 @@ pub struct LazyParam<'a, P>
 
 impl<'a, P> LazyParam<'a, P>
 {
-    pub fn new<F: Producer<P> + 'a>(f: F) -> Self {
+    pub fn new<F: Producer<Output=P> + 'a>(f: F) -> Self {
         LazyParam { lazy: Lazy::new(f) }
     }
 }
@@ -59,12 +64,12 @@ impl<'a, P> LazyParam<'a, P>
 pub struct LazyThreadSafe<'a, P>
 {
     field: Mutex<Option<P>>,
-    producer: Box<Producer<P> + 'a + Send + Sync>
+    producer: Box<Producer<Output=P> + 'a + Send + Sync>
 }
 
 impl<'a, P> LazyThreadSafe<'a, P>
 {
-    pub fn new<F: Producer<P> + 'a + Send + Sync>(f: F) -> Self
+    pub fn new<F: Producer<Output=P> + 'a + Send + Sync>(f: F) -> Self
     {
         LazyThreadSafe { field: Mutex::new(None), producer: Box::new(f) }
     }
@@ -90,7 +95,7 @@ pub struct LazyThreadSafeParam<'a, P>
 
 impl<'a, P> LazyThreadSafeParam<'a, P>
 {
-    pub fn new<F: Producer<P> + 'a + Send + Sync>(f: F) -> Self {
+    pub fn new<F: Producer<Output=P> + 'a + Send + Sync>(f: F) -> Self {
         LazyThreadSafeParam { lazy: LazyThreadSafe::new(f) }
     }
 }
@@ -102,7 +107,7 @@ mod tests {
     mod lazy {
         use super::*;
 
-        fn param<'a, P, F: Producer<P> + 'a>(f: F) -> LazyParam<'a, P> {
+        fn param<'a, P, F: Producer<Output=P> + 'a>(f: F) -> LazyParam<'a, P> {
             LazyParam::new(f)
         }
 
@@ -112,7 +117,7 @@ mod tests {
     mod lazy_thread_safe {
         use super::*;
 
-        fn param<'a, P, F: Producer<P> + 'a + Send + Sync>(f: F) -> LazyThreadSafeParam<'a, P> {
+        fn param<'a, P, F: Producer<Output=P> + 'a + Send + Sync>(f: F) -> LazyThreadSafeParam<'a, P> {
             LazyThreadSafeParam::new(f)
         }
 
