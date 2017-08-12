@@ -21,15 +21,15 @@ impl<V, F: Fn() -> V> Producer for F {
     }
 }
 
-struct Field<'a, V> {
-    value: Option<V>,
-    producer: Box<Producer<Output=V> + 'a>
+struct Field<P: Producer> {
+    value: Option<P::Output>,
+    producer: P
 }
 
-impl<'a, V> Field<'a, V> {
-    fn new<P: Producer<Output=V> + 'a>(producer: P) -> Self
+impl<P: Producer> Field<P> {
+    fn new(producer: P) -> Self
     {
-        Field { value: None, producer: Box::new(producer) }
+        Field { value: None, producer: producer }
     }
 
     fn compute(&mut self) {
@@ -37,16 +37,16 @@ impl<'a, V> Field<'a, V> {
     }
 }
 
-pub struct Lazy<'a, P>(UnsafeCell<Field<'a, P>>);
+pub struct Lazy<P: Producer>(UnsafeCell<Field<P>>);
 
-impl<'a, P> Lazy<'a, P>
+impl<P: Producer> Lazy<P>
 {
-    pub fn new<F: Producer<Output=P> + 'a>(f: F) -> Self
+    pub fn new(producer: P) -> Self
     {
-        Lazy(UnsafeCell::new(Field::new(f)))
+        Lazy(UnsafeCell::new(Field::new(producer)))
     }
 
-    pub fn get(&self) -> &P {
+    pub fn get(&self) -> &P::Output {
         unsafe {
             let field = &mut *self.0.get();
             if field.value.is_none() {
@@ -60,54 +60,55 @@ impl<'a, P> Lazy<'a, P>
     }
 }
 
-pub struct LazyParam<'a, P>
+pub struct LazyParam<P: Producer>
 {
-    pub lazy: Lazy<'a, P>
+    pub lazy: Lazy<P>
 }
 
-impl<'a, P> LazyParam<'a, P>
+impl<P: Producer> LazyParam<P>
 {
-    pub fn new<F: Producer<Output=P> + 'a>(f: F) -> Self {
-        LazyParam { lazy: Lazy::new(f) }
+    pub fn new(producer: P) -> Self {
+        LazyParam { lazy: Lazy::new(producer) }
     }
 }
 
-pub struct LazyThreadSafe<'a, P>
-{
-    field: Mutex<Option<P>>,
-    producer: Box<Producer<Output=P> + 'a + Send + Sync>
-}
+pub trait ThreadSafeProducer: Producer + Send + Sync {}
 
-impl<'a, P> LazyThreadSafe<'a, P>
+impl<P: Producer + Send + Sync> ThreadSafeProducer for P {}
+
+pub struct LazyThreadSafe<P: ThreadSafeProducer>(Mutex<Field<P>>);
+
+impl<P: ThreadSafeProducer> LazyThreadSafe<P>
+    where P: Producer + Send + Sync
 {
-    pub fn new<F: Producer<Output=P> + 'a + Send + Sync>(f: F) -> Self
+    pub fn new(producer: P) -> Self
     {
-        LazyThreadSafe { field: Mutex::new(None), producer: Box::new(f) }
+        LazyThreadSafe(Mutex::new(Field::new(producer)))
     }
 
-    pub fn get(&self) -> &P {
-        let mut inner = self.field.lock().unwrap();
-        if inner.is_none() {
-            *inner = Some(self.producer.produce());
+    pub fn get(&self) -> &P::Output {
+        let mut field = self.0.lock().unwrap();
+        if field.value.is_none() {
+            field.compute();
         }
         unsafe {
-            match *inner {
-                Some(ref v) => &*(v as *const P),
+            match field.value {
+                Some(ref v) => &*(v as *const P::Output),
                 None => debug_unreachable!()
             }
         }
     }
 }
 
-pub struct LazyThreadSafeParam<'a, P>
+pub struct LazyThreadSafeParam<P: ThreadSafeProducer>
 {
-    pub lazy: LazyThreadSafe<'a, P>
+    pub lazy: LazyThreadSafe<P>
 }
 
-impl<'a, P> LazyThreadSafeParam<'a, P>
+impl<P: ThreadSafeProducer> LazyThreadSafeParam<P>
 {
-    pub fn new<F: Producer<Output=P> + 'a + Send + Sync>(f: F) -> Self {
-        LazyThreadSafeParam { lazy: LazyThreadSafe::new(f) }
+    pub fn new(producer: P) -> Self {
+        LazyThreadSafeParam { lazy: LazyThreadSafe::new(producer) }
     }
 }
 
@@ -118,8 +119,8 @@ mod tests {
     mod lazy {
         use super::*;
 
-        fn param<'a, P, F: Producer<Output=P> + 'a>(f: F) -> LazyParam<'a, P> {
-            LazyParam::new(f)
+        fn param<P: Producer>(producer: P) -> LazyParam<P> {
+            LazyParam::new(producer)
         }
 
         mod contract;
@@ -128,8 +129,8 @@ mod tests {
     mod lazy_thread_safe {
         use super::*;
 
-        fn param<'a, P, F: Producer<Output=P> + 'a + Send + Sync>(f: F) -> LazyThreadSafeParam<'a, P> {
-            LazyThreadSafeParam::new(f)
+        fn param<P: ThreadSafeProducer>(producer: P) -> LazyThreadSafeParam<P> {
+            LazyThreadSafeParam::new(producer)
         }
 
         mod contract;
