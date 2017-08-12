@@ -47,16 +47,11 @@ impl<P: Producer> Lazy<P>
     }
 
     pub fn get(&self) -> &P::Output {
-        unsafe {
-            let field = &mut *self.0.get();
-            if field.value.is_none() {
-                field.compute();
-            }
-            match field.value {
-                Some(ref v) => v,
-                None => debug_unreachable!()
-            }
+        let field = self.0.field_mut();
+        if field.value.is_none() {
+            field.compute();
         }
+        (field as &Field<P>).extract()
     }
 }
 
@@ -78,6 +73,55 @@ impl<P: Producer + Send + Sync> ThreadSafeProducer for P {}
 
 pub struct LazyThreadSafe<P: ThreadSafeProducer>(Mutex<Field<P>>);
 
+use std::ops::{Deref, DerefMut};
+
+trait WrappedField<'a, P: Producer, W: Deref<Target=Field<P>> + DerefMut + 'a> {
+    fn field_mut<'b: 'a>(&'b self) -> W;
+}
+
+trait ExtractValue<'b, P: Producer> {
+    fn extract(&self) -> &'b P::Output;
+}
+
+impl<'a, P: Producer> WrappedField<'a, P, std::sync::MutexGuard<'a, Field<P>>> for Mutex<Field<P>>
+{
+    fn field_mut<'b: 'a>(&'b self) -> std::sync::MutexGuard<'a, Field<P>> {
+        self.lock().unwrap()
+    }
+}
+
+impl<'a, 'b: 'a, P: Producer> ExtractValue<'b, P> for std::sync::MutexGuard<'a, Field<P>>
+{
+    fn extract(&self) -> &'b P::Output {
+        unsafe {
+            match self.value {
+                Some(ref v) => &*(v as *const P::Output),
+                None => debug_unreachable!()
+            }
+        }
+    }
+}
+
+impl<'a, P: Producer> WrappedField<'a, P, &'a mut Field<P>> for UnsafeCell<Field<P>>
+{
+    fn field_mut<'b: 'a>(&'b self) -> &'a mut Field<P> {
+        unsafe {
+            &mut *self.get()
+        }
+    }
+}
+
+impl<'b, 'c: 'b, P: Producer> ExtractValue<'b, P> for &'c Field<P> {
+    fn extract(&self) -> &'b P::Output {
+        unsafe {
+            match self.value {
+                Some(ref v) => v,
+                None => debug_unreachable!()
+            }
+        }
+    }
+}
+
 impl<P: ThreadSafeProducer> LazyThreadSafe<P>
     where P: Producer + Send + Sync
 {
@@ -87,16 +131,11 @@ impl<P: ThreadSafeProducer> LazyThreadSafe<P>
     }
 
     pub fn get(&self) -> &P::Output {
-        let mut field = self.0.lock().unwrap();
+        let mut field = self.0.field_mut();
         if field.value.is_none() {
             field.compute();
         }
-        unsafe {
-            match field.value {
-                Some(ref v) => &*(v as *const P::Output),
-                None => debug_unreachable!()
-            }
-        }
+        field.extract()
     }
 }
 
