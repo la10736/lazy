@@ -13,35 +13,46 @@ pub trait Producer {
     fn produce(&self) -> Self::Output;
 }
 
-impl<P, F: Fn() -> P> Producer for F {
-    type Output = P;
+impl<V, F: Fn() -> V> Producer for F {
+    type Output = V;
 
-    fn produce(&self) -> P {
+    fn produce(&self) -> V {
         self()
     }
 }
 
-pub struct Lazy<'a, P>
-{
-    field: UnsafeCell<Option<P>>,
-    producer: UnsafeCell<Box<Producer<Output=P> + 'a>>
+struct Field<'a, V> {
+    value: Option<V>,
+    producer: Box<Producer<Output=V> + 'a>
 }
+
+impl<'a, V> Field<'a, V> {
+    fn new<P: Producer<Output=V> + 'a>(producer: P) -> Self
+    {
+        Field { value: None, producer: Box::new(producer) }
+    }
+
+    fn compute(&mut self) {
+        self.value = Some(self.producer.produce())
+    }
+}
+
+pub struct Lazy<'a, P>(UnsafeCell<Field<'a, P>>);
 
 impl<'a, P> Lazy<'a, P>
 {
     pub fn new<F: Producer<Output=P> + 'a>(f: F) -> Self
     {
-        Lazy { field: UnsafeCell::new(None), producer: UnsafeCell::new(Box::new(f)) }
+        Lazy(UnsafeCell::new(Field::new(f)))
     }
 
     pub fn get(&self) -> &P {
         unsafe {
-            let inner = &mut *self.field.get();
-            if inner.is_none() {
-                let producer = &mut *self.producer.get();
-                *inner = Some(producer.produce());
+            let field = &mut *self.0.get();
+            if field.value.is_none() {
+                field.compute();
             }
-            match *inner {
+            match field.value {
                 Some(ref v) => v,
                 None => debug_unreachable!()
             }
