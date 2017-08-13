@@ -47,11 +47,11 @@ impl<P: Producer> Lazy<P>
     }
 
     pub fn get(&self) -> &P::Output {
-        let field = self.0.field_mut();
+        let mut field = self.0.smart();
         if field.value.is_none() {
             field.compute();
         }
-        (field as &Field<P>).extract()
+        field.extract()
     }
 }
 
@@ -75,24 +75,24 @@ pub struct LazyThreadSafe<P: ThreadSafeProducer>(Mutex<Field<P>>);
 
 use std::ops::{Deref, DerefMut};
 
-trait WrappedField<'a, P: Producer, W: Deref<Target=Field<P>> + DerefMut + 'a> {
-    fn field_mut<'b: 'a>(&'b self) -> W;
+trait SmartContainer<'local, P: Producer, S: Deref<Target=Field<P>> + DerefMut + 'local> {
+    fn smart<'container: 'local>(&'container self) -> S;
 }
 
-trait ExtractValue<'b, P: Producer> {
-    fn extract(&self) -> &'b P::Output;
+trait ExtractValue<'local, 'producer: 'local, P: Producer + 'producer> {
+    fn extract(&'local self) -> &'producer P::Output;
 }
 
-impl<'a, P: Producer> WrappedField<'a, P, std::sync::MutexGuard<'a, Field<P>>> for Mutex<Field<P>>
+impl<'a, P: Producer> SmartContainer<'a, P, std::sync::MutexGuard<'a, Field<P>>> for Mutex<Field<P>>
 {
-    fn field_mut<'b: 'a>(&'b self) -> std::sync::MutexGuard<'a, Field<P>> {
+    fn smart<'b: 'a>(&'b self) -> std::sync::MutexGuard<'a, Field<P>> {
         self.lock().unwrap()
     }
 }
 
-impl<'a, 'b: 'a, P: Producer> ExtractValue<'b, P> for std::sync::MutexGuard<'a, Field<P>>
+impl<'a, 'b: 'a, P: Producer + 'b> ExtractValue<'a, 'b, P> for std::sync::MutexGuard<'a, Field<P>>
 {
-    fn extract(&self) -> &'b P::Output {
+    fn extract(&'a self) -> &'b P::Output {
         unsafe {
             match self.value {
                 Some(ref v) => &*(v as *const P::Output),
@@ -102,20 +102,38 @@ impl<'a, 'b: 'a, P: Producer> ExtractValue<'b, P> for std::sync::MutexGuard<'a, 
     }
 }
 
-impl<'a, P: Producer> WrappedField<'a, P, &'a mut Field<P>> for UnsafeCell<Field<P>>
-{
-    fn field_mut<'b: 'a>(&'b self) -> &'a mut Field<P> {
+struct SmartFieldCell<'a, P: Producer + 'a>(&'a UnsafeCell<Field<P>>);
+
+impl<'a, P: Producer + 'a> Deref for SmartFieldCell<'a, P> {
+    type Target = Field<P>;
+
+    fn deref(&self) -> &Self::Target {
         unsafe {
-            &mut *self.get()
+            &*self.0.get()
         }
     }
 }
 
-impl<'b, 'c: 'b, P: Producer> ExtractValue<'b, P> for &'c Field<P> {
-    fn extract(&self) -> &'b P::Output {
+impl<'a, P: Producer + 'a> DerefMut for SmartFieldCell<'a, P> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            &mut *self.0.get()
+        }
+    }
+}
+
+impl<'a, P: Producer + 'a> SmartContainer<'a, P, SmartFieldCell<'a, P>> for UnsafeCell<Field<P>>
+{
+    fn smart<'c: 'a>(&'c self) -> SmartFieldCell<'a, P> {
+        SmartFieldCell(self)
+    }
+}
+
+impl<'a, 'b: 'a, P: Producer + 'b> ExtractValue<'a, 'b, P> for SmartFieldCell<'a, P> {
+    fn extract(&'a self) -> &'b P::Output {
         unsafe {
             match self.value {
-                Some(ref v) => v,
+                Some(ref v) => &*(v as *const P::Output),
                 None => debug_unreachable!()
             }
         }
@@ -131,7 +149,7 @@ impl<P: ThreadSafeProducer> LazyThreadSafe<P>
     }
 
     pub fn get(&self) -> &P::Output {
-        let mut field = self.0.field_mut();
+        let mut field = self.0.smart();
         if field.value.is_none() {
             field.compute();
         }
