@@ -83,16 +83,18 @@ trait ExtractValue<'local, 'producer: 'local, P: Producer + 'producer> {
     fn extract(&'local self) -> &'producer P::Output;
 }
 
-impl<'a, P: Producer> SmartContainer<'a, P, std::sync::MutexGuard<'a, Field<P>>> for Mutex<Field<P>>
+type ThreadSafeSmartContainer<'local, P> = std::sync::MutexGuard<'local, Field<P>>;
+
+impl<'local, P: Producer + 'local> SmartContainer<'local, P, ThreadSafeSmartContainer<'local, P>> for Mutex<Field<P>>
 {
-    fn smart<'b: 'a>(&'b self) -> std::sync::MutexGuard<'a, Field<P>> {
+    fn smart<'container: 'local>(&'container self) -> ThreadSafeSmartContainer<'local, P> {
         self.lock().unwrap()
     }
 }
 
-impl<'a, 'b: 'a, P: Producer + 'b> ExtractValue<'a, 'b, P> for std::sync::MutexGuard<'a, Field<P>>
+impl<'local, 'producer: 'local, P: Producer + 'producer> ExtractValue<'local, 'producer, P> for ThreadSafeSmartContainer<'local, P>
 {
-    fn extract(&'a self) -> &'b P::Output {
+    fn extract(&'local self) -> &'producer P::Output {
         unsafe {
             match self.value {
                 Some(ref v) => &*(v as *const P::Output),
@@ -102,9 +104,9 @@ impl<'a, 'b: 'a, P: Producer + 'b> ExtractValue<'a, 'b, P> for std::sync::MutexG
     }
 }
 
-struct SmartFieldCell<'a, P: Producer + 'a>(&'a UnsafeCell<Field<P>>);
+struct SmartFieldCell<'local, P: Producer + 'local>(&'local UnsafeCell<Field<P>>);
 
-impl<'a, P: Producer + 'a> Deref for SmartFieldCell<'a, P> {
+impl<'local, P: Producer + 'local> Deref for SmartFieldCell<'local, P> {
     type Target = Field<P>;
 
     fn deref(&self) -> &Self::Target {
@@ -114,7 +116,7 @@ impl<'a, P: Producer + 'a> Deref for SmartFieldCell<'a, P> {
     }
 }
 
-impl<'a, P: Producer + 'a> DerefMut for SmartFieldCell<'a, P> {
+impl<'local, P: Producer + 'local> DerefMut for SmartFieldCell<'local, P> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             &mut *self.0.get()
@@ -122,15 +124,15 @@ impl<'a, P: Producer + 'a> DerefMut for SmartFieldCell<'a, P> {
     }
 }
 
-impl<'a, P: Producer + 'a> SmartContainer<'a, P, SmartFieldCell<'a, P>> for UnsafeCell<Field<P>>
+impl<'local, P: Producer + 'local> SmartContainer<'local, P, SmartFieldCell<'local, P>> for UnsafeCell<Field<P>>
 {
-    fn smart<'c: 'a>(&'c self) -> SmartFieldCell<'a, P> {
+    fn smart<'container: 'local>(&'container self) -> SmartFieldCell<'local, P> {
         SmartFieldCell(self)
     }
 }
 
-impl<'a, 'b: 'a, P: Producer + 'b> ExtractValue<'a, 'b, P> for SmartFieldCell<'a, P> {
-    fn extract(&'a self) -> &'b P::Output {
+impl<'local, 'producer: 'local, P: Producer + 'producer> ExtractValue<'local, 'producer, P> for SmartFieldCell<'local, P> {
+    fn extract(&'local self) -> &'producer P::Output {
         unsafe {
             match self.value {
                 Some(ref v) => &*(v as *const P::Output),
