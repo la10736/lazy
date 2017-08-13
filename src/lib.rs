@@ -51,7 +51,7 @@ impl<P: Producer> Lazy<P>
         if field.value.is_none() {
             field.compute();
         }
-        field.extract()
+        field.get_ref()
     }
 }
 
@@ -79,28 +79,12 @@ trait SmartContainer<'local, P: Producer, S: Deref<Target=Field<P>> + DerefMut +
     fn smart<'container: 'local>(&'container self) -> S;
 }
 
-trait ExtractValue<'local, 'producer: 'local, P: Producer + 'producer> {
-    fn extract(&'local self) -> &'producer P::Output;
-}
-
 type ThreadSafeSmartContainer<'local, P> = std::sync::MutexGuard<'local, Field<P>>;
 
 impl<'local, P: Producer + 'local> SmartContainer<'local, P, ThreadSafeSmartContainer<'local, P>> for Mutex<Field<P>>
 {
     fn smart<'container: 'local>(&'container self) -> ThreadSafeSmartContainer<'local, P> {
         self.lock().unwrap()
-    }
-}
-
-impl<'local, 'producer: 'local, P: Producer + 'producer> ExtractValue<'local, 'producer, P> for ThreadSafeSmartContainer<'local, P>
-{
-    fn extract(&'local self) -> &'producer P::Output {
-        unsafe {
-            match self.value {
-                Some(ref v) => &*(v as *const P::Output),
-                None => debug_unreachable!()
-            }
-        }
     }
 }
 
@@ -131,8 +115,16 @@ impl<'local, P: Producer + 'local> SmartContainer<'local, P, SmartFieldCell<'loc
     }
 }
 
-impl<'local, 'producer: 'local, P: Producer + 'producer> ExtractValue<'local, 'producer, P> for SmartFieldCell<'local, P> {
-    fn extract(&'local self) -> &'producer P::Output {
+trait ValueReference<'local, 'producer: 'local, P: Producer + 'producer> {
+    fn get_ref(&'local self) -> &'producer P::Output;
+}
+
+impl<'local, 'producer, P, T> ValueReference<'local, 'producer, P> for T
+    where 'producer: 'local,
+          P: Producer + 'producer,
+          T: Deref<Target=Field<P>> + 'local
+{
+    fn get_ref(&'local self) -> &'producer P::Output {
         unsafe {
             match self.value {
                 Some(ref v) => &*(v as *const P::Output),
@@ -155,7 +147,7 @@ impl<P: ThreadSafeProducer> LazyThreadSafe<P>
         if field.value.is_none() {
             field.compute();
         }
-        field.extract()
+        field.get_ref()
     }
 }
 
