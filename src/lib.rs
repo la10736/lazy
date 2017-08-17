@@ -3,7 +3,7 @@
 #[macro_use(debug_unreachable)]
 extern crate debug_unreachable;
 
-use std::cell::UnsafeCell;
+use std::cell::{UnsafeCell, RefCell, RefMut};
 use std::sync::Mutex;
 
 
@@ -37,21 +37,72 @@ impl<P: Producer> Field<P> {
     }
 }
 
+trait LazyDelegate<'local, 'container: 'local> {
+    type Output;
+    type Producer: Producer<Output=Self::Output> + 'container;
+    type Smart: Deref<Target=Field<Self::Producer>> + DerefMut;
+
+    fn get(&'container self) -> &Self::Output {
+        let mut field = self.smart();
+        if field.value.is_none() {
+            field.compute();
+        }
+        field.get_ref()
+    }
+
+    fn smart(&'container self) -> Self::Smart;
+}
+
+pub struct LazyCheck<P: Producer>(RefCell<Field<P>>);
+
+impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for LazyCheck<P> {
+    type Output = P::Output;
+    type Producer = P;
+    type Smart = RefMut<'local, Field<P>>;
+
+    fn smart(&'container self) -> Self::Smart {
+        self.0.borrow_mut()
+    }
+}
+
+impl<P: Producer> LazyCheck<P>
+{
+    pub fn new(producer: P) -> Self
+    {
+        LazyCheck(RefCell::new(Field::new(producer)))
+    }
+}
+
+pub struct LazyCheckParam<P: Producer>
+{
+    pub lazy: LazyCheck<P>
+}
+
+impl<P: Producer> LazyCheckParam<P>
+{
+    pub fn new(producer: P) -> Self {
+        LazyCheckParam { lazy: LazyCheck::new(producer) }
+    }
+}
+
 pub struct Lazy<P: Producer>(UnsafeCell<Field<P>>);
+
+impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for Lazy<P> {
+    type Output = P::Output;
+    type Producer = P;
+    type Smart = SmartFieldCell<'local, P>;
+
+    fn smart(&'container self) -> Self::Smart {
+        SmartFieldCell(&self.0)
+    }
+}
+
 
 impl<P: Producer> Lazy<P>
 {
     pub fn new(producer: P) -> Self
     {
         Lazy(UnsafeCell::new(Field::new(producer)))
-    }
-
-    pub fn get(&self) -> &P::Output {
-        let mut field = self.0.smart();
-        if field.value.is_none() {
-            field.compute();
-        }
-        field.get_ref()
     }
 }
 
@@ -75,7 +126,7 @@ pub struct LazyThreadSafe<P: ThreadSafeProducer>(Mutex<Field<P>>);
 
 use std::ops::{Deref, DerefMut};
 
-trait SmartContainer<'local, P: Producer, S: Deref<Target=Field<P>> + DerefMut + 'local> {
+trait SmartContainer<'local, P: Producer, S: Deref<Target=Field<P>> + DerefMut + 'local + ? Sized> {
     fn smart<'container: 'local>(&'container self) -> S;
 }
 
@@ -172,6 +223,16 @@ mod tests {
 
         fn param<P: Producer>(producer: P) -> LazyParam<P> {
             LazyParam::new(producer)
+        }
+
+        mod contract;
+    }
+
+    mod lazy_check {
+        use super::*;
+
+        fn param<P: Producer>(producer: P) -> LazyCheckParam<P> {
+            LazyCheckParam::new(producer)
         }
 
         mod contract;
