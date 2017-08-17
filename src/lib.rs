@@ -38,10 +38,12 @@ impl<P: Producer> Field<P> {
     }
 }
 
+trait SmartField<P: Producer>: Deref<Target=Field<P>> + DerefMut {}
+
 trait LazyDelegate<'local, 'container: 'local> {
     type Output;
     type Producer: Producer<Output=Self::Output> + 'container;
-    type Smart: Deref<Target=Field<Self::Producer>> + DerefMut;
+    type Smart: SmartField<Self::Producer>;
 
     fn get(&'container self) -> &Self::Output {
         let mut field = self.smart();
@@ -70,6 +72,8 @@ impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 
         self.0.borrow_mut()
     }
 }
+
+impl<'local, P: Producer> SmartField<P> for RefMut<'local, Field<P>> {}
 
 impl<P: Producer> Lazy<P>
 {
@@ -112,6 +116,8 @@ impl<'local, 'container: 'local, P: ThreadSafeProducer + 'container> LazyDelegat
         self.0.lock().unwrap()
     }
 }
+
+impl<'local, P: Producer> SmartField<P> for ThreadSafeSmartContainer<'local, P> {}
 
 impl<P: ThreadSafeProducer> LazyThreadSafe<P>
     where P: Producer + Send + Sync
