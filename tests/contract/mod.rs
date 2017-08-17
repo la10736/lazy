@@ -12,7 +12,7 @@ fn should_return_42_also_after_changed_backing_field_value() {
     #[allow(non_upper_case_globals)]
     static mut seed: i32 = 42;
 
-    let s = LazyParam::new(|| unsafe { seed });
+    let s = param(|| unsafe { seed });
 
     assert_eq!(&42, s.get());
 
