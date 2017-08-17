@@ -3,7 +3,7 @@
 #[macro_use(debug_unreachable)]
 extern crate debug_unreachable;
 
-use std::cell::{UnsafeCell, RefCell, RefMut};
+use std::cell::{RefCell, RefMut};
 use std::sync::Mutex;
 use std::ops::{Deref, DerefMut};
 
@@ -59,9 +59,9 @@ trait LazyDelegate<'local, 'container: 'local> {
     fn smart(&'container self) -> Self::Smart;
 }
 
-struct LazyCheck<P: Producer>(RefCell<Field<P>>);
+struct Lazy<P: Producer>(RefCell<Field<P>>);
 
-impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for LazyCheck<P> {
+impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for Lazy<P> {
     type Output = P::Output;
     type Producer = P;
     type Smart = RefMut<'local, Field<P>>;
@@ -71,48 +71,11 @@ impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 
     }
 }
 
-impl<P: Producer> LazyCheck<P>
-{
-    fn new(producer: P) -> Self
-    {
-        LazyCheck(RefCell::new(Field::new(producer)))
-    }
-}
-
-pub struct LazyCheckParam<P: Producer>
-{
-    lazy: LazyCheck<P>
-}
-
-impl<P: Producer> LazyCheckParam<P>
-{
-    pub fn new(producer: P) -> Self {
-        LazyCheckParam { lazy: LazyCheck::new(producer) }
-    }
-
-    pub fn get(&self) -> &P::Output {
-        self.lazy.get()
-    }
-}
-
-struct Lazy<P: Producer>(UnsafeCell<Field<P>>);
-
-impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for Lazy<P> {
-    type Output = P::Output;
-    type Producer = P;
-    type Smart = SmartFieldCell<'local, P>;
-
-    fn smart(&'container self) -> Self::Smart {
-        SmartFieldCell(&self.0)
-    }
-}
-
-
 impl<P: Producer> Lazy<P>
 {
     fn new(producer: P) -> Self
     {
-        Lazy(UnsafeCell::new(Field::new(producer)))
+        Lazy(RefCell::new(Field::new(producer)))
     }
 }
 
@@ -131,27 +94,6 @@ impl<P: Producer> LazyParam<P>
         self.lazy.get()
     }
 }
-
-struct SmartFieldCell<'local, P: Producer + 'local>(&'local UnsafeCell<Field<P>>);
-
-impl<'local, P: Producer + 'local> Deref for SmartFieldCell<'local, P> {
-    type Target = Field<P>;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe {
-            &*self.0.get()
-        }
-    }
-}
-
-impl<'local, P: Producer + 'local> DerefMut for SmartFieldCell<'local, P> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            &mut *self.0.get()
-        }
-    }
-}
-
 
 pub trait ThreadSafeProducer: Producer + Send + Sync {}
 
@@ -205,16 +147,6 @@ mod tests {
 
         fn param<P: Producer>(producer: P) -> LazyParam<P> {
             LazyParam::new(producer)
-        }
-
-        mod contract;
-    }
-
-    mod lazy_check {
-        use super::*;
-
-        fn param<P: Producer>(producer: P) -> LazyCheckParam<P> {
-            LazyCheckParam::new(producer)
         }
 
         mod contract;
