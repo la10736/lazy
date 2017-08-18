@@ -11,30 +11,32 @@ use std::ops::{Deref, DerefMut};
 pub trait Producer {
     type Output;
 
-    fn produce(&self) -> Self::Output;
+    fn produce(self) -> Self::Output;
 }
 
-impl<V, F: Fn() -> V> Producer for F {
+impl<V, F: FnOnce() -> V> Producer for F {
     type Output = V;
 
-    fn produce(&self) -> V {
+    fn produce(self) -> V {
         self()
     }
 }
 
 struct Field<P: Producer> {
     value: Option<P::Output>,
-    producer: P
+    producer: Option<P>
 }
 
 impl<P: Producer> Field<P> {
     fn new(producer: P) -> Self
     {
-        Field { value: None, producer: producer }
+        Field { value: None, producer: Some(producer) }
     }
 
     fn compute(&mut self) {
-        self.value = Some(self.producer.produce())
+        if let Some(producer) = self.producer.take() {
+            self.value = Some(producer.produce())
+        }
     }
 }
 

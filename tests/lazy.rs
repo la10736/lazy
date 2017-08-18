@@ -9,5 +9,3 @@ mod contract;
 fn param<P: Producer>(producer: P) -> LazyParam<P> {
     LazyParam::new(producer)
 }
-
-
