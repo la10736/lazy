@@ -3,10 +3,11 @@
 #[macro_use(debug_unreachable)]
 extern crate debug_unreachable;
 
-use std::cell::{RefCell, RefMut};
-use std::sync::Mutex;
-use std::ops::{Deref, DerefMut};
+pub use lazy::LazyParam;
+pub use lazy_thread_safe::{LazyThreadSafeParam, ThreadSafeProducer};
 
+mod lazy;
+mod lazy_thread_safe;
 
 pub trait Producer {
     type Output;
@@ -40,7 +41,7 @@ impl<P: Producer> Field<P> {
     }
 }
 
-trait SmartField<P: Producer>: Deref<Target=Field<P>> + DerefMut {}
+trait SmartField<P: Producer>: std::ops::Deref<Target=Field<P>> + std::ops::DerefMut {}
 
 trait LazyDelegate<'local, 'container: 'local> {
     type Output;
@@ -61,87 +62,4 @@ trait LazyDelegate<'local, 'container: 'local> {
     }
 
     fn smart(&'container self) -> Self::Smart;
-}
-
-struct Lazy<P: Producer>(RefCell<Field<P>>);
-
-impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for Lazy<P> {
-    type Output = P::Output;
-    type Producer = P;
-    type Smart = RefMut<'local, Field<P>>;
-
-    fn smart(&'container self) -> Self::Smart {
-        self.0.borrow_mut()
-    }
-}
-
-impl<'local, P: Producer> SmartField<P> for RefMut<'local, Field<P>> {}
-
-impl<P: Producer> Lazy<P>
-{
-    fn new(producer: P) -> Self
-    {
-        Lazy(RefCell::new(Field::new(producer)))
-    }
-}
-
-pub struct LazyParam<P: Producer>
-{
-    lazy: Lazy<P>
-}
-
-impl<P: Producer> LazyParam<P>
-{
-    pub fn new(producer: P) -> Self {
-        LazyParam { lazy: Lazy::new(producer) }
-    }
-
-    pub fn get(&self) -> &P::Output {
-        self.lazy.get()
-    }
-}
-
-pub trait ThreadSafeProducer: Producer + Send + Sync {}
-
-impl<P: Producer + Send + Sync> ThreadSafeProducer for P {}
-
-struct LazyThreadSafe<P: ThreadSafeProducer>(Mutex<Field<P>>);
-
-type ThreadSafeSmartContainer<'local, P> = std::sync::MutexGuard<'local, Field<P>>;
-
-impl<'local, 'container: 'local, P: ThreadSafeProducer + 'container> LazyDelegate<'local, 'container> for LazyThreadSafe<P> {
-    type Output = P::Output;
-    type Producer = P;
-    type Smart = ThreadSafeSmartContainer<'local, P>;
-
-    fn smart(&'container self) -> ThreadSafeSmartContainer<'local, P> {
-        self.0.lock().unwrap()
-    }
-}
-
-impl<'local, P: Producer> SmartField<P> for ThreadSafeSmartContainer<'local, P> {}
-
-impl<P: ThreadSafeProducer> LazyThreadSafe<P>
-    where P: Producer + Send + Sync
-{
-    fn new(producer: P) -> Self
-    {
-        LazyThreadSafe(Mutex::new(Field::new(producer)))
-    }
-}
-
-pub struct LazyThreadSafeParam<P: ThreadSafeProducer>
-{
-    lazy: LazyThreadSafe<P>
-}
-
-impl<P: ThreadSafeProducer> LazyThreadSafeParam<P>
-{
-    pub fn new(producer: P) -> Self {
-        LazyThreadSafeParam { lazy: LazyThreadSafe::new(producer) }
-    }
-
-    pub fn get(&self) -> &P::Output {
-        self.lazy.get()
-    }
 }
