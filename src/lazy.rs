@@ -1,9 +1,9 @@
 use super::*;
 use std::cell::{RefCell, RefMut};
 
-struct Lazy<P: Producer>(RefCell<Field<P>>);
+struct LazyImpl<P: Producer>(RefCell<Field<P>>);
 
-impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for Lazy<P> {
+impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for LazyImpl<P> {
     type Output = P::Output;
     type Producer = P;
     type Smart = RefMut<'local, Field<P>>;
@@ -15,26 +15,36 @@ impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 
 
 impl<'local, P: Producer> SmartField<P> for RefMut<'local, Field<P>> {}
 
-impl<P: Producer> Lazy<P>
+impl<P: Producer> LazyImpl<P>
 {
     fn new(producer: P) -> Self
     {
-        Lazy(RefCell::new(Field::new(producer)))
+        LazyImpl(RefCell::new(Field::new(producer)))
     }
 }
 
-pub struct LazyParam<P: Producer>
-{
-    lazy: Lazy<P>
-}
+pub struct Lazy<P: Producer>(LazyImpl<P>);
 
-impl<P: Producer> LazyParam<P>
+impl<P: Producer> Lazy<P>
 {
     pub fn new(producer: P) -> Self {
-        LazyParam { lazy: Lazy::new(producer) }
+        Lazy(LazyImpl::new(producer))
     }
 
     pub fn get(&self) -> &P::Output {
-        self.lazy.get()
+        self.0.get()
     }
 }
+
+//pub struct LazyProperty<V, C>(LazyImpl<P>);
+//
+//impl<P: Producer> Lazy<P>
+//{
+//    pub fn new(producer: P) -> Self {
+//        LazyProperty(LazyImpl::new(producer))
+//    }
+//
+//    pub fn get(&self, ) -> &P::Output {
+//        self.0.get()
+//    }
+//}

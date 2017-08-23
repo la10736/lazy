@@ -3,7 +3,7 @@
 #[macro_use(debug_unreachable)]
 extern crate debug_unreachable;
 
-pub use lazy::LazyParam;
+pub use lazy::Lazy;
 pub use lazy_thread_safe::{LazyThreadSafeParam, ThreadSafeProducer};
 
 mod lazy;
@@ -12,13 +12,13 @@ mod lazy_thread_safe;
 pub trait Producer {
     type Output;
 
-    fn produce(self) -> Self::Output;
+    fn produce(&mut self) -> Self::Output;
 }
 
-impl<V, F: FnOnce() -> V> Producer for F {
+impl<V, F: FnMut() -> V> Producer for F {
     type Output = V;
 
-    fn produce(self) -> V {
+    fn produce(&mut self) -> V {
         self()
     }
 }
@@ -35,7 +35,7 @@ impl<P: Producer> Field<P> {
     }
 
     fn compute(&mut self) {
-        if let Some(producer) = self.producer.take() {
+        if let Some(mut producer) = self.producer.take() {
             self.value = Some(producer.produce())
         }
     }
