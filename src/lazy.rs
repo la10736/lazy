@@ -1,21 +1,22 @@
 use super::*;
 use std::cell::{RefCell, RefMut};
 
-struct LazyImpl<P: Producer>(RefCell<Field<P>>);
+struct LazyImpl<C, P: Producer<C>>(RefCell<Field<C, P>>);
 
-impl<'local, 'container: 'local, P: Producer + 'container> LazyDelegate<'local, 'container> for LazyImpl<P> {
+impl<'local, 'container: 'local, C: 'container, P: Producer<C> + 'container> LazyDelegate<'local, 'container> for LazyImpl<C, P> {
     type Output = P::Output;
     type Producer = P;
-    type Smart = RefMut<'local, Field<P>>;
+    type Context = C;
+    type Smart = RefMut<'local, Field<C, P>>;
 
     fn smart(&'container self) -> Self::Smart {
         self.0.borrow_mut()
     }
 }
 
-impl<'local, P: Producer> SmartField<P> for RefMut<'local, Field<P>> {}
+impl<'local, C, P: Producer<C>> SmartField<C, P> for RefMut<'local, Field<C, P>> {}
 
-impl<P: Producer> LazyImpl<P>
+impl<C, P: Producer<C>> LazyImpl<C, P>
 {
     fn new(producer: P) -> Self
     {
@@ -23,28 +24,40 @@ impl<P: Producer> LazyImpl<P>
     }
 }
 
-pub struct Lazy<P: Producer>(LazyImpl<P>);
+pub struct LazyValue<V, C>(LazyImpl<C, BoxedProducer<V, C>>);
 
-impl<P: Producer> Lazy<P>
+impl<V> LazyValue<V, VoidContext>
 {
-    pub fn new(producer: P) -> Self {
-        Lazy(LazyImpl::new(producer))
+    pub fn new(producer: Box<Producer<VoidContext, Output=V>>) -> Self {
+        LazyValue(LazyImpl::new(BoxedProducer(producer)))
     }
 
-    pub fn get(&self) -> &P::Output {
-        self.0.get()
+    pub fn get(&self) -> &V {
+        self.0.get(&VOID_CONTEXT)
     }
 }
 
-//pub struct LazyProperty<V, C>(LazyImpl<P>);
-//
-//impl<P: Producer> Lazy<P>
-//{
-//    pub fn new(producer: P) -> Self {
-//        LazyProperty(LazyImpl::new(producer))
-//    }
-//
-//    pub fn get(&self, ) -> &P::Output {
-//        self.0.get()
-//    }
-//}
+pub type Lazy<V> = LazyValue<V, VoidContext>;
+
+struct BoxedProducer<V, C>(Box<Producer<C, Output=V>>);
+
+impl<V, C> Producer<C> for BoxedProducer<V, C> {
+    type Output = V;
+
+    fn produce(&mut self, context: &C) -> Self::Output {
+        self.0.produce(context)
+    }
+}
+
+pub struct LazyProperty<V, C>(LazyImpl<C, BoxedProducer<V, C>>);
+
+impl<V, C> LazyProperty<V, C>
+{
+    pub fn new(producer: Box<Producer<C, Output=V>>) -> Self {
+        LazyProperty(LazyImpl::new(BoxedProducer(producer)))
+    }
+
+    pub fn get(&self, context: &C) -> &V {
+        self.0.get(context)
+    }
+}
