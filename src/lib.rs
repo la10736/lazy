@@ -1,5 +1,4 @@
 #![feature(optin_builtin_traits)]
-#![feature(fn_traits)]
 #![feature(unboxed_closures)]
 
 #[macro_use(debug_unreachable)]
