@@ -1,6 +1,5 @@
 use super::*;
 use std::sync::{Mutex, Arc};
-use lazy_init::Producer;
 
 #[test]
 fn should_return_42() {

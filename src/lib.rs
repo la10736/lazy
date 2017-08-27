@@ -5,10 +5,11 @@
 extern crate test;
 
 pub use lazy::Lazy;
-//pub use lazy_thread_safe::{LazyThreadSafeParam, ThreadSafeProducer};
+pub use lazy_thread_safe::ThreadSafeProducer;
+pub use lazy_thread_safe::Lazy as LazySync;
 
 mod lazy;
-//mod lazy_thread_safe;
+mod lazy_thread_safe;
 
 pub trait Producer<C> {
     type Output;

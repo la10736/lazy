@@ -1,47 +1,70 @@
 use super::*;
 use std::sync::Mutex;
 
-pub trait ThreadSafeProducer: Producer + Send + Sync {}
+pub trait ThreadSafeProducer<C>: Producer<C> + Send + Sync {}
 
-impl<P: Producer + Send + Sync> ThreadSafeProducer for P {}
+impl<C, P: Producer<C> + Send + Sync> ThreadSafeProducer<C> for P {}
 
-struct LazyThreadSafe<P: ThreadSafeProducer>(Mutex<Field<P>>);
+struct BoxedProducer<V, C>(Box<ThreadSafeProducer<C, Output=V>>);
 
-type ThreadSafeSmartContainer<'local, P> = std::sync::MutexGuard<'local, Field<P>>;
+impl<V, C> Producer<C> for BoxedProducer<V, C> {
+    type Output = V;
 
-impl<'local, 'container: 'local, P: ThreadSafeProducer + 'container> LazyDelegate<'local, 'container> for LazyThreadSafe<P> {
-    type Output = P::Output;
-    type Producer = P;
-    type Smart = ThreadSafeSmartContainer<'local, P>;
+    fn produce(&mut self, context: &C) -> Self::Output {
+        self.0.produce(context)
+    }
+}
 
-    fn smart(&'container self) -> ThreadSafeSmartContainer<'local, P> {
+
+struct LazySyncImpl<V, C>(Mutex<Field<C, BoxedProducer<V, C>>>);
+
+type ThreadSafeSmartContainer<'local, V, C> = std::sync::MutexGuard<'local, Field<C, BoxedProducer<V, C>>>;
+
+impl<'local, 'container: 'local, V: 'container, C: 'container> LazyDelegate<'local, 'container> for LazySyncImpl<V, C> {
+    type Output = V;
+    type Context = C;
+    type Producer = BoxedProducer<V, C>;
+    type Smart = ThreadSafeSmartContainer<'local, Self::Output, Self::Context>;
+
+    fn smart(&'container self) -> Self::Smart {
         self.0.lock().unwrap()
     }
 }
 
-impl<'local, P: Producer> SmartField<P> for ThreadSafeSmartContainer<'local, P> {}
+impl<'local, V, C> SmartField<C, BoxedProducer<V, C>> for ThreadSafeSmartContainer<'local, V, C> {}
 
-impl<P: ThreadSafeProducer> LazyThreadSafe<P>
-    where P: Producer + Send + Sync
+impl<V, C> LazySyncImpl<V, C>
 {
-    fn new(producer: P) -> Self
+    fn new(producer: BoxedProducer<V, C>) -> Self
     {
-        LazyThreadSafe(Mutex::new(Field::new(producer)))
+        LazySyncImpl(Mutex::new(Field::new(producer)))
     }
 }
 
-pub struct LazyThreadSafeParam<P: ThreadSafeProducer>
-{
-    lazy: LazyThreadSafe<P>
-}
+pub struct LazyValue<V, C>(LazySyncImpl<V, C>);
 
-impl<P: ThreadSafeProducer> LazyThreadSafeParam<P>
+impl<V> LazyValue<V, VoidContext>
 {
-    pub fn new(producer: P) -> Self {
-        LazyThreadSafeParam { lazy: LazyThreadSafe::new(producer) }
+    pub fn new(producer: Box<ThreadSafeProducer<VoidContext, Output=V>>) -> Self {
+        LazyValue(LazySyncImpl::new(BoxedProducer(producer)))
     }
 
-    pub fn get(&self) -> &P::Output {
-        self.lazy.get()
+    pub fn get(&self) -> &V {
+        self.0.get(&VOID_CONTEXT)
+    }
+}
+
+pub type Lazy<V> = LazyValue<V, VoidContext>;
+
+pub struct LazyProperty<V, C>(LazySyncImpl<V, C>);
+
+impl<V, C> LazyProperty<V, C>
+{
+    pub fn new(producer: Box<ThreadSafeProducer<C, Output=V>>) -> Self {
+        LazyProperty(LazySyncImpl::new(BoxedProducer(producer)))
+    }
+
+    pub fn get(&self, context: &C) -> &V {
+        self.0.get(context)
     }
 }
