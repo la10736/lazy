@@ -4,12 +4,15 @@
 
 extern crate test;
 
-pub use lazy::Lazy;
-pub use lazy_thread_safe::ThreadSafeProducer;
-pub use lazy_thread_safe::Lazy as LazySync;
+mod raw;
+mod sync;
 
-mod lazy;
-mod lazy_thread_safe;
+pub use raw::{Lazy, LazyProperty};
+pub use sync::Lazy as LazySync;
+pub use sync::LazyProperty as LazyPropertySync;
+pub use sync::SharedProducer;
+
+pub struct VoidContext {}
 
 pub trait Producer<C> {
     type Output;
@@ -24,8 +27,6 @@ impl<V, C, F: FnMut(&C) -> V> Producer<C> for F {
         self(context)
     }
 }
-
-pub struct VoidContext {}
 
 static VOID_CONTEXT: VoidContext = VoidContext {};
 
