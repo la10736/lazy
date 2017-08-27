@@ -1,13 +1,13 @@
 use super::*;
 use std::cell::{RefCell, RefMut};
 
-struct LazyImpl<C, P: Producer<C>>(RefCell<Field<C, P>>);
+struct LazyImpl<V, C>(RefCell<Field<C, BoxedProducer<V, C>>>);
 
-impl<'local, 'container: 'local, C: 'container, P: Producer<C> + 'container> LazyDelegate<'local, 'container> for LazyImpl<C, P> {
-    type Output = P::Output;
-    type Producer = P;
+impl<'local, 'container: 'local, V: 'container, C: 'container> LazyDelegate<'local, 'container> for LazyImpl<V, C> {
+    type Output = V;
     type Context = C;
-    type Smart = RefMut<'local, Field<C, P>>;
+    type Producer = BoxedProducer<V, C>;
+    type Smart = RefMut<'local, Field<C, Self::Producer>>;
 
     fn smart(&'container self) -> Self::Smart {
         self.0.borrow_mut()
@@ -16,15 +16,15 @@ impl<'local, 'container: 'local, C: 'container, P: Producer<C> + 'container> Laz
 
 impl<'local, C, P: Producer<C>> SmartField<C, P> for RefMut<'local, Field<C, P>> {}
 
-impl<C, P: Producer<C>> LazyImpl<C, P>
+impl<V, C> LazyImpl<V, C>
 {
-    fn new(producer: P) -> Self
+    fn new(producer: BoxedProducer<V, C>) -> Self
     {
         LazyImpl(RefCell::new(Field::new(producer)))
     }
 }
 
-pub struct LazyValue<V, C>(LazyImpl<C, BoxedProducer<V, C>>);
+pub struct LazyValue<V, C>(LazyImpl<V, C>);
 
 impl<V> LazyValue<V, VoidContext>
 {
@@ -49,7 +49,7 @@ impl<V, C> Producer<C> for BoxedProducer<V, C> {
     }
 }
 
-pub struct LazyProperty<V, C>(LazyImpl<C, BoxedProducer<V, C>>);
+pub struct LazyProperty<V, C>(LazyImpl<V, C>);
 
 impl<V, C> LazyProperty<V, C>
 {

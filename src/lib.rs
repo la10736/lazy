@@ -1,8 +1,8 @@
 #![feature(optin_builtin_traits)]
 #![feature(unboxed_closures)]
+#![feature(test)]
 
-#[macro_use(debug_unreachable)]
-extern crate debug_unreachable;
+extern crate test;
 
 pub use lazy::Lazy;
 //pub use lazy_thread_safe::{LazyThreadSafeParam, ThreadSafeProducer};
@@ -56,16 +56,255 @@ trait LazyDelegate<'local, 'container: 'local> {
 
     fn get(&'container self, context: &Self::Context) -> &Self::Output {
         let mut field = self.smart();
+        Self::fill(&mut field, context);
+        unsafe { self.extract_reference(&field) }
+    }
+
+    unsafe fn extract_reference(&'container self, field: &Self::Smart) -> &Self::Output {
+        &*(field.value
+            .as_ref()
+            .expect("Should call fill() before!")
+            as *const Self::Output
+        )
+    }
+
+    fn fill(field: &mut Self::Smart, context: &Self::Context) {
         if field.value.is_none() {
             field.compute(context);
-        }
-        unsafe {
-            match field.value {
-                Some(ref v) => &*(v as *const Self::Output),
-                None => debug_unreachable!()
-            }
         }
     }
 
     fn smart(&'container self) -> Self::Smart;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test::Bencher;
+    use std::cell::{RefMut, RefCell};
+
+    struct SmartFake<C, P: Producer<C>>(Field<C, P>);
+
+    impl<C, P: Producer<C>> SmartFake<C, P> {
+        fn new(v: P::Output) -> Self {
+            SmartFake(Field { value: Some(v), producer: None })
+        }
+    }
+
+    impl<C, P: Producer<C>> std::ops::Deref for SmartFake<C, P> {
+        type Target = Field<C, P>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl<C, P: Producer<C>> std::ops::DerefMut for SmartFake<C, P> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+
+    impl<C, P: Producer<C>> SmartField<C, P> for SmartFake<C, P> {}
+
+    struct FakeProducer(i32);
+
+    impl Producer<VoidContext> for FakeProducer {
+        type Output = i32;
+
+        fn produce(&mut self, _context: &VoidContext) -> Self::Output {
+            self.0
+        }
+    }
+
+    struct Fake(i32);
+
+    impl<'local, 'container: 'local> LazyDelegate<'local, 'container> for Fake {
+        type Output = i32;
+        type Context = VoidContext;
+        type Producer = FakeProducer;
+        type Smart = SmartFake<VoidContext, FakeProducer>;
+
+        fn smart(&'container self) -> Self::Smart {
+            SmartFake::new(self.0)
+        }
+    }
+
+    impl ! Sync for Fake {}
+
+    #[bench]
+    fn get_fake_10000(b: &mut Bencher) {
+        let p = Fake(42);
+
+        b.iter(|| for _ in 0..10000 { p.get(&VOID_CONTEXT); })
+    }
+
+    #[bench]
+    fn smart_fake_10000(b: &mut Bencher) {
+        let p = Fake(42);
+
+        b.iter(|| for _ in 0..10000 { if p.smart().value.is_none() { panic!("Should be some") }; })
+    }
+
+    #[bench]
+    fn fill_fake_10000(b: &mut Bencher) {
+        let p = Fake(42);
+        p.get(&VOID_CONTEXT);
+        let mut s = p.smart();
+
+        b.iter(|| for _ in 0..10000 { Fake::fill(&mut s, &VOID_CONTEXT) })
+    }
+
+    #[bench]
+    fn reference_fake_10000(b: &mut Bencher) {
+        let p = Fake(42);
+        p.get(&VOID_CONTEXT);
+        let s = p.smart();
+
+        b.iter(|| for _ in 0..10000 {
+            assert_eq!(unsafe { p.extract_reference(&s) }, &42)
+        })
+    }
+
+    struct RefCellFieldWrap(RefCell<Field<VoidContext, FakeProducer>>);
+
+    impl<'local, 'container: 'local> LazyDelegate<'local, 'container> for RefCellFieldWrap {
+        type Output = i32;
+        type Context = VoidContext;
+        type Producer = FakeProducer;
+        type Smart = RefMut<'local, Field<Self::Context, Self::Producer>>;
+
+        fn smart(&'container self) -> Self::Smart {
+            self.0.borrow_mut()
+        }
+    }
+
+    #[bench]
+    fn get_ref_cell_10000(b: &mut Bencher) {
+        let p = RefCellFieldWrap(RefCell::new(Field::new(FakeProducer(42))));
+
+        b.iter(|| for _ in 0..10000 { p.get(&VOID_CONTEXT); })
+    }
+
+    #[bench]
+    fn smart_ref_cell_10000(b: &mut Bencher) {
+        let p = RefCellFieldWrap(RefCell::new(Field::new(FakeProducer(42))));
+        p.get(&VOID_CONTEXT);
+
+        b.iter(|| for _ in 0..10000 { if p.smart().value.is_none() { panic!("Should be some") }; })
+    }
+
+    #[bench]
+    fn fill_ref_cell_10000(b: &mut Bencher) {
+        let p = RefCellFieldWrap(RefCell::new(Field::new(FakeProducer(42))));
+        p.get(&VOID_CONTEXT);
+        let mut s = p.smart();
+
+        b.iter(|| for _ in 0..10000 { RefCellFieldWrap::fill(&mut s, &VOID_CONTEXT) })
+    }
+
+    #[bench]
+    fn reference_ref_cell_10000(b: &mut Bencher) {
+        let p = RefCellFieldWrap(RefCell::new(Field::new(FakeProducer(42))));
+        p.get(&VOID_CONTEXT);
+        let s = p.smart();
+
+        b.iter(|| for _ in 0..10000 {
+            assert_eq!(unsafe { p.extract_reference(&s) }, &42)
+        })
+    }
+
+    #[bench]
+    fn dereference_int_pointer_10000(b: &mut Bencher) {
+        let fortytwo = 42;
+        let ptr = &fortytwo as *const i32;
+
+        b.iter(|| for _ in 0..10000 {
+            assert_eq!(unsafe { &*ptr }, &42)
+        })
+    }
+
+    struct BoxedProducer<V, C>(Box<Producer<C, Output=V>>);
+
+    impl<V, C> Producer<C> for BoxedProducer<V, C> {
+        type Output = V;
+
+        fn produce(&mut self, context: &C) -> Self::Output {
+            self.0.produce(context)
+        }
+    }
+
+    struct BoxedWrap(RefCell<Field<VoidContext, BoxedProducer<i32, VoidContext>>>);
+
+    impl BoxedWrap {
+        fn new(v: i32) -> Self {
+            BoxedWrap(RefCell::new(Field::new(BoxedProducer(Box::new(FakeProducer(v))))))
+        }
+    }
+
+    impl<'local, 'container: 'local> LazyDelegate<'local, 'container> for BoxedWrap {
+        type Output = i32;
+        type Context = VoidContext;
+        type Producer = BoxedProducer<Self::Output, Self::Context>;
+        type Smart = RefMut<'local, Field<Self::Context, Self::Producer>>;
+
+        fn smart(&'container self) -> Self::Smart {
+            self.0.borrow_mut()
+        }
+    }
+
+    #[bench]
+    fn get_boxed_10000(b: &mut Bencher) {
+        let p = BoxedWrap::new(42);
+
+        b.iter(|| for _ in 0..10000 { p.get(&VOID_CONTEXT); })
+    }
+
+    #[bench]
+    fn smart_boxed_10000(b: &mut Bencher) {
+        let p = BoxedWrap::new(42);
+        p.get(&VOID_CONTEXT);
+
+        b.iter(|| for _ in 0..10000 { if p.smart().value.is_none() { panic!("Should be some") }; })
+    }
+
+    #[bench]
+    fn fill_boxed_10000(b: &mut Bencher) {
+        let p = BoxedWrap::new(42);
+        p.get(&VOID_CONTEXT);
+        let mut s = p.smart();
+
+        b.iter(|| for _ in 0..10000 { BoxedWrap::fill(&mut s, &VOID_CONTEXT) })
+    }
+
+    #[bench]
+    fn reference_boxed_10000(b: &mut Bencher) {
+        let p = BoxedWrap::new(42);
+        p.get(&VOID_CONTEXT);
+        let s = p.smart();
+
+        b.iter(|| for _ in 0..10000 {
+            assert_eq!(unsafe { p.extract_reference(&s) }, &42)
+        })
+    }
+
+    struct LazyValue(BoxedWrap);
+
+    impl LazyValue
+    {
+        pub fn new(v: i32) -> Self {
+            LazyValue(BoxedWrap::new(v))
+        }
+
+        pub fn get(&self) -> &i32 {
+            self.0.get(&VOID_CONTEXT)
+        }
+    }
+
+    #[bench]
+    fn get_wrapped_boxed_10000(b: &mut Bencher) {
+        let l = LazyValue::new(42);
+
+        b.iter(|| for _ in 0..10000 { assert_eq!(&42, l.get()); })
+    }
 }

@@ -2,6 +2,3 @@
 name = "lazy_init"
 version = "0.1.0"
 authors = ["michele <michele.damico@gmail.com>"]
-
-[dependencies]
-debug_unreachable = "*"
