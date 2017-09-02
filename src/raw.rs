@@ -1,26 +1,26 @@
 use super::*;
-use std::cell::{RefCell, RefMut};
+use std::cell::UnsafeCell;
 
-struct LazyImpl<V, C>(RefCell<Field<C, BoxedProducer<V, C>>>);
+struct LazyImpl<V, C>(UnsafeCell<Field<C, BoxedProducer<V, C>>>);
 
 impl<'local, 'container: 'local, V: 'container, C: 'container> LazyDelegate<'local, 'container> for LazyImpl<V, C> {
     type Output = V;
     type Context = C;
     type Producer = BoxedProducer<V, C>;
-    type Smart = RefMut<'local, Field<C, Self::Producer>>;
+    type Smart = &'container mut Field<C, Self::Producer>;
 
     fn smart(&'container self) -> Self::Smart {
-        self.0.borrow_mut()
+        unsafe { &mut *self.0.get() }
     }
 }
 
-impl<'local, C, P: Producer<C>> SmartField<C, P> for RefMut<'local, Field<C, P>> {}
+impl<'a, C, P: Producer<C>> SmartField<C, P> for &'a mut Field<C, P> {}
 
 impl<V, C> LazyImpl<V, C>
 {
     fn new(producer: BoxedProducer<V, C>) -> Self
     {
-        LazyImpl(RefCell::new(Field::new(producer)))
+        LazyImpl(UnsafeCell::new(Field::new(producer)))
     }
 }
 

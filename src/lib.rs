@@ -85,8 +85,6 @@ mod tests {
     use test::Bencher;
     use std::cell::{RefMut, RefCell};
 
-    impl<'a, C, P: Producer<C>> SmartField<C, P> for &'a mut Field<C, P> {}
-
     struct FakeProducer(i32);
 
     impl Producer<VoidContext> for FakeProducer {
@@ -153,6 +151,8 @@ mod tests {
     }
 
     struct RefCellFieldWrap(RefCell<Field<VoidContext, FakeProducer>>);
+
+    impl<'local, C, P: Producer<C>> SmartField<C, P> for RefMut<'local, Field<C, P>> {}
 
     impl<'local, 'container: 'local> LazyDelegate<'local, 'container> for RefCellFieldWrap {
         type Output = i32;
