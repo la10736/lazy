@@ -85,29 +85,7 @@ mod tests {
     use test::Bencher;
     use std::cell::{RefMut, RefCell};
 
-    struct SmartFake<C, P: Producer<C>>(Field<C, P>);
-
-    impl<C, P: Producer<C>> SmartFake<C, P> {
-        fn new(v: P::Output) -> Self {
-            SmartFake(Field { value: Some(v), producer: None })
-        }
-    }
-
-    impl<C, P: Producer<C>> std::ops::Deref for SmartFake<C, P> {
-        type Target = Field<C, P>;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
-    impl<C, P: Producer<C>> std::ops::DerefMut for SmartFake<C, P> {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.0
-        }
-    }
-
-    impl<C, P: Producer<C>> SmartField<C, P> for SmartFake<C, P> {}
+    impl<'a, C, P: Producer<C>> SmartField<C, P> for &'a mut Field<C, P> {}
 
     struct FakeProducer(i32);
 
@@ -119,16 +97,22 @@ mod tests {
         }
     }
 
-    struct Fake(i32);
+    struct Fake(std::cell::UnsafeCell<Field<VoidContext, FakeProducer>>);
+
+    impl Fake {
+        fn new(v: i32) -> Self {
+            Fake(std::cell::UnsafeCell::new(Field { value: Some(v), producer: None }))
+        }
+    }
 
     impl<'local, 'container: 'local> LazyDelegate<'local, 'container> for Fake {
         type Output = i32;
         type Context = VoidContext;
         type Producer = FakeProducer;
-        type Smart = SmartFake<VoidContext, FakeProducer>;
+        type Smart = &'container mut Field<VoidContext, FakeProducer>;
 
         fn smart(&'container self) -> Self::Smart {
-            SmartFake::new(self.0)
+            unsafe { &mut *self.0.get() }
         }
     }
 
@@ -136,21 +120,21 @@ mod tests {
 
     #[bench]
     fn get_fake_10000(b: &mut Bencher) {
-        let p = Fake(42);
+        let p = Fake::new(42);
 
-        b.iter(|| for _ in 0..10000 { p.get(&VOID_CONTEXT); })
+        b.iter(move || for _ in 0..10000 { assert_eq!(&42, p.get(&VOID_CONTEXT)) })
     }
 
     #[bench]
     fn smart_fake_10000(b: &mut Bencher) {
-        let p = Fake(42);
+        let p = Fake::new(42);
 
         b.iter(|| for _ in 0..10000 { if p.smart().value.is_none() { panic!("Should be some") }; })
     }
 
     #[bench]
     fn fill_fake_10000(b: &mut Bencher) {
-        let p = Fake(42);
+        let p = Fake::new(42);
         p.get(&VOID_CONTEXT);
         let mut s = p.smart();
 
@@ -159,7 +143,7 @@ mod tests {
 
     #[bench]
     fn reference_fake_10000(b: &mut Bencher) {
-        let p = Fake(42);
+        let p = Fake::new(42);
         p.get(&VOID_CONTEXT);
         let s = p.smart();
 
@@ -185,7 +169,7 @@ mod tests {
     fn get_ref_cell_10000(b: &mut Bencher) {
         let p = RefCellFieldWrap(RefCell::new(Field::new(FakeProducer(42))));
 
-        b.iter(|| for _ in 0..10000 { p.get(&VOID_CONTEXT); })
+        b.iter(|| for _ in 0..10000 { assert_eq!(&42, p.get(&VOID_CONTEXT)) })
     }
 
     #[bench]
@@ -259,7 +243,7 @@ mod tests {
     fn get_boxed_10000(b: &mut Bencher) {
         let p = BoxedWrap::new(42);
 
-        b.iter(|| for _ in 0..10000 { p.get(&VOID_CONTEXT); })
+        b.iter(|| for _ in 0..10000 { assert_eq!(&42, p.get(&VOID_CONTEXT)) })
     }
 
     #[bench]
