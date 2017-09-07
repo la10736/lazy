@@ -121,14 +121,20 @@ mod tests {
         fn get(b: &mut Bencher) {
             let p = UnsafeCellW::new(42);
 
-            b.iter(move || for _ in 0..10000 { assert_eq!(&42, p.get(&VOID_CONTEXT)) })
+            b.iter(move || {
+                let n = test::black_box(10000);
+                for _ in 0..n { p.get(&VOID_CONTEXT); }
+            })
         }
 
         #[bench]
         fn smart(b: &mut Bencher) {
             let p = UnsafeCellW::new(42);
 
-            b.iter(|| for _ in 0..10000 { if p.smart().value.is_none() { panic!("Should be some") }; })
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n { p.smart().value.is_none(); }
+            })
         }
 
         #[bench]
@@ -137,7 +143,10 @@ mod tests {
             p.get(&VOID_CONTEXT);
             let mut s = p.smart();
 
-            b.iter(|| for _ in 0..10000 { UnsafeCellW::fill(&mut s, &VOID_CONTEXT) })
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n { UnsafeCellW::fill(&mut s, &VOID_CONTEXT) }
+            })
         }
 
         #[bench]
@@ -146,8 +155,11 @@ mod tests {
             p.get(&VOID_CONTEXT);
             let s = p.smart();
 
-            b.iter(|| for _ in 0..10000 {
-                assert_eq!(unsafe { p.extract_reference(&s) }, &42)
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n {
+                    unsafe { p.extract_reference(&s) };
+                }
             })
         }
     }
@@ -174,7 +186,10 @@ mod tests {
         fn get(b: &mut Bencher) {
             let p = RefCellW(RefCell::new(Field::new(FakeProducer(42))));
 
-            b.iter(|| for _ in 0..10000 { assert_eq!(&42, p.get(&VOID_CONTEXT)) })
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n { p.get(&VOID_CONTEXT); }
+            })
         }
 
         #[bench]
@@ -182,7 +197,10 @@ mod tests {
             let p = RefCellW(RefCell::new(Field::new(FakeProducer(42))));
             p.get(&VOID_CONTEXT);
 
-            b.iter(|| for _ in 0..10000 { if p.smart().value.is_none() { panic!("Should be some") }; })
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n { p.smart().value.is_none(); }
+            })
         }
 
         #[bench]
@@ -191,7 +209,10 @@ mod tests {
             p.get(&VOID_CONTEXT);
             let mut s = p.smart();
 
-            b.iter(|| for _ in 0..10000 { RefCellW::fill(&mut s, &VOID_CONTEXT) })
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n { RefCellW::fill(&mut s, &VOID_CONTEXT) }
+            })
         }
 
         #[bench]
@@ -200,8 +221,11 @@ mod tests {
             p.get(&VOID_CONTEXT);
             let s = p.smart();
 
-            b.iter(|| for _ in 0..10000 {
-                assert_eq!(unsafe { p.extract_reference(&s) }, &42)
+            b.iter(|| {
+                let n = test::black_box(10000);
+                for _ in 0..n {
+                    unsafe { p.extract_reference(&s) };
+                }
             })
         }
     }
@@ -211,8 +235,11 @@ mod tests {
         let fortytwo = 42;
         let ptr = &fortytwo as *const i32;
 
-        b.iter(|| for _ in 0..10000 {
-            assert_eq!(unsafe { &*ptr }, &42)
+        b.iter(|| {
+            let n = test::black_box(10000);
+            for _ in 0..n {
+                unsafe { &*ptr };
+            }
         })
     }
 }
