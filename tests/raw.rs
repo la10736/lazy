@@ -2,9 +2,13 @@
 extern crate lazy_init;
 extern crate test;
 
-use lazy_init::{Lazy, Producer, VoidContext};
+use lazy_init::{Lazy, LazyProperty, Producer, VoidContext};
 
 mod contract;
+
+fn from_producer<C, V, P: Producer<C, Output=V> + 'static>(p: P) -> LazyProperty<V, C> {
+    LazyProperty::new(Box::new(p) as Box<Producer<C, Output=V>>)
+}
 
 struct P<V, F: FnMut() -> V>(F);
 

@@ -44,22 +44,22 @@ fn should_work_with_string_too() {
     assert_eq!(&"string slice", p.get());
 }
 
-//#[test]
-//fn use_producer_trait() {
-//    struct C { v: i32}
-//    struct P {};
-//    impl Producer<C> for P {
-//        type Output = i32;
-//
-//        fn produce(&mut self, context: &C) -> Self::Output { 30 + context.v }
-//    }
-//
-//    let producer = P {};
-//    let context = C {v: 12};
-//    let p = param(producer);
-//
-//    assert_eq!(&42, p.get(&context));
-//}
+#[test]
+fn use_producer_trait() {
+    struct C { v: i32 }
+    struct P {};
+    impl Producer<C> for P {
+        type Output = i32;
+
+        fn produce(&mut self, context: &C) -> Self::Output { 30 + context.v }
+    }
+
+    let producer = P {};
+    let context = C { v: 12 };
+    let p = from_producer(producer);
+
+    assert_eq!(&42, p.get(&context));
+}
 
 //#[test]
 //fn use_fnonece_producer() {
