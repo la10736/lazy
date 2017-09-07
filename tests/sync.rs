@@ -2,16 +2,13 @@
 extern crate lazy_init;
 extern crate test;
 
-use lazy_init::{LazySync, LazyPropertySync, Producer, VoidContext};
+pub use lazy_init::{LazySync as Lazy, LazyPropertySync as LazyProperty,
+                    Producer, VoidContext};
 
 mod contract;
 
-fn from_producer<C, V: 'static, P: Producer<C, Output=V> + Send + Sync + 'static>(p: P) -> LazyPropertySync<V, C> {
-    LazyPropertySync::new(Box::new(p))
-}
-
-fn param<V: 'static, F: FnMut() -> V + Send + Sync + 'static>(f: F) -> LazySync<V> {
-    LazySync::new(Box::new(P(f)))
+fn param<V: 'static, F: FnMut() -> V + Send + Sync + 'static>(f: F) -> Lazy<V> {
+    Lazy::new(Box::new(P(f)))
 }
 
 struct P<V, F: FnMut() -> V>(F);

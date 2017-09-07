@@ -53,8 +53,8 @@ pub struct LazyProperty<V, C>(LazyImpl<V, C>);
 
 impl<V, C> LazyProperty<V, C>
 {
-    pub fn new(producer: Box<Producer<C, Output=V>>) -> Self {
-        LazyProperty(LazyImpl::new(BoxedProducer(producer)))
+    pub fn new<P: Producer<C, Output=V> + 'static>(p: P) -> Self {
+        LazyProperty(LazyImpl::new(BoxedProducer(Box::new(p))))
     }
 
     pub fn get(&self, context: &C) -> &V {

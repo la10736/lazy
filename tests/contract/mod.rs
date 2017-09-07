@@ -56,7 +56,7 @@ fn use_producer_trait() {
 
     let producer = P {};
     let context = C { v: 12 };
-    let p = from_producer(producer);
+    let p = LazyProperty::new(producer);
 
     assert_eq!(&42, p.get(&context));
 }
@@ -79,4 +79,58 @@ fn use_function_as_producer() {
     let p = param(producer);
 
     assert_eq!(&42, p.get());
+}
+
+#[test]
+fn lazy_property() {
+    struct S {
+        name: String,
+        property: LazyProperty<String, S>
+    }
+
+    impl S {
+        fn new(n: &str) -> Self {
+            S {
+                name: n.to_string(),
+                property: LazyProperty::new(|c: &Self| format!("{} 42", c.name)),
+            }
+        }
+
+        fn get_property(&self) -> &str {
+            self.property.get(self)
+        }
+    }
+
+    let obj = S::new("Fortytwo");
+
+    assert_eq!("Fortytwo 42", obj.get_property())
+}
+
+#[test]
+fn lazy_property_call_method() {
+    struct S {
+        name: String,
+        property: LazyProperty<String, S>
+    }
+
+    impl S {
+        fn new(n: &str) -> Self {
+            S {
+                name: n.to_string(),
+                property: LazyProperty::new(Self::resolve_property),
+            }
+        }
+
+        fn get_property(&self) -> &str {
+            self.property.get(self)
+        }
+
+        fn resolve_property(&self) -> String {
+            format!("{} 42", self.name)
+        }
+    }
+
+    let obj = S::new("Fortytwo");
+
+    assert_eq!("Fortytwo 42", obj.get_property())
 }
