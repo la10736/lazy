@@ -51,7 +51,7 @@ fn use_producer_trait() {
     impl Producer<C> for P {
         type Output = i32;
 
-        fn produce(&mut self, context: &C) -> Self::Output { 30 + context.v }
+        fn produce(self, context: &C) -> Self::Output { 30 + context.v }
     }
 
     let producer = P {};
@@ -61,16 +61,16 @@ fn use_producer_trait() {
     assert_eq!(&42, p.get(&context));
 }
 
-//#[test]
-//fn use_fnonece_producer() {
-//    let a = "42".to_string();
-//
-//    let producer = move || a;
-//
-//    let p = param(producer);
-//
-//    assert_eq!(&"42", p.get());
-//}
+#[test]
+fn use_fnonece_producer() {
+    let a = "42".to_string();
+
+    let producer = move || a;
+
+    let p = param(producer);
+
+    assert_eq!(&"42", p.get());
+}
 
 #[test]
 fn use_function_as_producer() {

@@ -28,7 +28,7 @@ pub struct LazyValue<V, C>(LazyImpl<V, C>);
 
 impl<V> LazyValue<V, VoidContext>
 {
-    pub fn new(producer: Box<Producer<VoidContext, Output=V>>) -> Self {
+    pub fn new(producer: Box<ProducerBox<VoidContext, Output=V>>) -> Self {
         LazyValue(LazyImpl::new(BoxedProducer(producer)))
     }
 
@@ -39,12 +39,12 @@ impl<V> LazyValue<V, VoidContext>
 
 pub type Lazy<V> = LazyValue<V, VoidContext>;
 
-struct BoxedProducer<V, C>(Box<Producer<C, Output=V>>);
+struct BoxedProducer<V, C>(Box<ProducerBox<C, Output=V>>);
 
 impl<V, C> Producer<C> for BoxedProducer<V, C> {
     type Output = V;
 
-    fn produce(&mut self, context: &C) -> Self::Output {
+    fn produce(self, context: &C) -> Self::Output {
         self.0.produce(context)
     }
 }

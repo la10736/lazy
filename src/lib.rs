@@ -1,7 +1,9 @@
 #![feature(optin_builtin_traits)]
 #![feature(unboxed_closures)]
 #![feature(test)]
+#![feature(fn_traits)]
 
+#[cfg(test)]
 extern crate test;
 
 mod raw;
@@ -15,14 +17,48 @@ pub struct VoidContext {}
 pub trait Producer<C> {
     type Output;
 
-    fn produce(&mut self, context: &C) -> Self::Output;
+    fn produce(self, context: &C) -> Self::Output;
 }
 
-impl<V, C, F: FnMut(&C) -> V> Producer<C> for F {
+pub trait ProducerBox<C> {
+    type Output;
+
+    fn produce_box(self: Box<Self>, context: &C) -> Self::Output;
+}
+
+impl<'a, C, V> Producer<C> for Box<ProducerBox<C, Output=V> + 'a> {
     type Output = V;
 
-    fn produce(&mut self, context: &C) -> V {
-        self(context)
+    fn produce(self, context: &C) -> Self::Output {
+        self.produce_box(context)
+    }
+}
+
+impl<'a, C, V> Producer<C> for Box<ProducerBox<C, Output=V> + Send + 'a> {
+    type Output = V;
+
+    fn produce(self, context: &C) -> Self::Output {
+        self.produce_box(context)
+    }
+}
+
+impl<C, P> ProducerBox<C> for P
+    where P: Producer<C>
+{
+    type Output = P::Output;
+
+    fn produce_box(self: Box<Self>, context: &C) -> Self::Output {
+        self.produce(context)
+    }
+}
+
+impl<C, V, F> Producer<C> for F
+    where F: FnOnce(&C) -> V
+{
+    type Output = V;
+
+    fn produce(self, context: &C) -> Self::Output {
+        self.call_once((context, ))
     }
 }
 
@@ -40,7 +76,7 @@ impl<C, P: Producer<C>> Field<C, P> {
     }
 
     fn compute(&mut self, context: &C) {
-        if let Some(mut producer) = self.producer.take() {
+        if let Some(producer) = self.producer.take() {
             self.value = Some(producer.produce(context))
         }
     }
@@ -88,7 +124,7 @@ mod tests {
     impl Producer<VoidContext> for FakeProducer {
         type Output = i32;
 
-        fn produce(&mut self, _context: &VoidContext) -> Self::Output {
+        fn produce(self, _context: &VoidContext) -> Self::Output {
             self.0
         }
     }

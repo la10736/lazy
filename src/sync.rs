@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::Mutex;
 
-pub trait SharedProducer<C>: Producer<C> + Send + Sync {}
+pub trait SharedProducer<C>: ProducerBox<C> + Send + Sync {}
 
 impl<C, P: Producer<C> + Send + Sync> SharedProducer<C> for P {}
 
@@ -10,8 +10,8 @@ struct BoxedProducer<V, C>(Box<SharedProducer<C, Output=V>>);
 impl<V, C> Producer<C> for BoxedProducer<V, C> {
     type Output = V;
 
-    fn produce(&mut self, context: &C) -> Self::Output {
-        self.0.produce(context)
+    fn produce(self, context: &C) -> Self::Output {
+        self.0.produce_box(context)
     }
 }
 
